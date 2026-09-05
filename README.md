@@ -4,21 +4,11 @@ A small Windows GUI around Illumina's BaseSpace CLI (`bs.exe`) intended for user
 
 ## Features
 
-- Browser/device authentication using `bs.exe auth`
-- Check active BaseSpace user with `bs.exe whoami`
-- Load BaseSpace projects with `bs.exe list projects`
-- Select a local FASTQ directory
-- Validate common Illumina FASTQ naming
-- Count samples and R1/R2 pairs
-- Show total FASTQ size
-- Recursive upload
-- Optional `--skip-invalid-filenames`
-- BaseSpace upload log
-- Per-file CLI progress parsing
-- Live MiB/s and Mbps
-- Average upload speed
-- Elapsed time
-- Cancel active upload
+- Authenticate with BaseSpace and select a project
+- Validate FASTQ filenames and R1/R2 pairs
+- Ignore invalid filenames and save a validation report
+- Upload FASTQs recursively with progress and network speed
+- View upload logs or cancel an active upload
 
 ## Repository contents
 
