@@ -83,12 +83,15 @@ class Project:
         return f"{self.name}  |  {self.project_id}"
 
 
-class BaseSpaceUploader(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title(APP_TITLE)
-        self.geometry("1080x820")
-        self.minsize(960, 700)
+class BaseSpaceUploader(ttk.Frame):
+    def __init__(self, master=None, show_header=True, configure_window=True):
+        super().__init__(master)
+        self.show_header = show_header
+        if configure_window:
+            window = self.winfo_toplevel()
+            window.title(APP_TITLE)
+            window.geometry("1080x820")
+            window.minsize(960, 700)
 
         self.events = queue.Queue()
         self.current_process = None
@@ -162,24 +165,26 @@ class BaseSpaceUploader(tk.Tk):
         style.configure("CardValue.TLabel", font=("Segoe UI", 15, "bold"))
         style.configure("CardLabel.TLabel", foreground="#5f6b7a", font=("Segoe UI", 8))
         style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(18, 8))
+        style.map("Primary.TButton", foreground=[("disabled", "#7a8490"), ("!disabled", "#0b4f79")])
 
-        outer = ttk.Frame(self, padding=16)
+        outer = ttk.Frame(self, padding=10)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text=APP_TITLE, style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            outer,
-            text="Authenticate  →  choose project  →  choose FASTQ folder  →  validate  →  upload",
-            style="Muted.TLabel",
-        ).pack(anchor="w", pady=(2, 10))
+        if self.show_header:
+            ttk.Label(outer, text=APP_TITLE, style="Title.TLabel").pack(anchor="w")
+            ttk.Label(
+                outer,
+                text="Authenticate  →  choose project  →  choose FASTQ folder  →  validate  →  upload",
+                style="Muted.TLabel",
+            ).pack(anchor="w", pady=(2, 10))
 
         self.status_banner = tk.Label(
             outer, text="NOT AUTHENTICATED", anchor="w", padx=14, pady=9,
             font=("Segoe UI", 11, "bold"), bg="#e9ecef", fg="#343a40",
         )
-        self.status_banner.pack(fill="x", pady=(0, 12))
+        self.status_banner.pack(fill="x", pady=(0, 8))
 
         content = ttk.Frame(outer)
-        content.pack(fill="x", pady=(0, 10))
+        content.pack(fill="x", pady=(0, 6))
         left_column = ttk.Frame(content)
         right_column = ttk.Frame(content)
         left_column.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
@@ -187,8 +192,8 @@ class BaseSpaceUploader(tk.Tk):
         content.columnconfigure(0, weight=1, uniform="workflow")
         content.columnconfigure(1, weight=1, uniform="workflow")
 
-        auth = ttk.LabelFrame(left_column, text="1. BaseSpace account", padding=10, style="Section.TLabelframe")
-        auth.pack(fill="x", pady=(0, 10))
+        auth = ttk.LabelFrame(left_column, text="1. BaseSpace account", padding=8, style="Section.TLabelframe")
+        auth.pack(fill="x", pady=(0, 6))
         ttk.Label(auth, text="bs.exe").grid(row=0, column=0, sticky="w")
         ttk.Entry(auth, textvariable=self.bs_path_var).grid(row=0, column=1, columnspan=2, sticky="ew", padx=8)
         ttk.Button(auth, text="Browse", command=self.browse_bs).grid(row=0, column=3)
@@ -201,8 +206,8 @@ class BaseSpaceUploader(tk.Tk):
         auth.columnconfigure(1, weight=1)
         auth.columnconfigure(2, weight=1)
 
-        project = ttk.LabelFrame(left_column, text="2. Destination project", padding=10, style="Section.TLabelframe")
-        project.pack(fill="x", pady=(0, 10))
+        project = ttk.LabelFrame(left_column, text="2. Destination project", padding=8, style="Section.TLabelframe")
+        project.pack(fill="x", pady=(0, 6))
         self.project_combo = ttk.Combobox(project, textvariable=self.project_var, state="normal")
         self.project_combo.grid(row=0, column=0, columnspan=2, sticky="ew")
         ttk.Button(project, text="Refresh Projects", command=self.load_projects).grid(row=1, column=0, sticky="w", pady=(8, 0))
@@ -211,8 +216,8 @@ class BaseSpaceUploader(tk.Tk):
         )
         project.columnconfigure(0, weight=1)
 
-        source = ttk.LabelFrame(right_column, text="3. FASTQ validation", padding=10, style="Section.TLabelframe")
-        source.pack(fill="x", pady=(0, 10))
+        source = ttk.LabelFrame(right_column, text="3. FASTQ validation", padding=8, style="Section.TLabelframe")
+        source.pack(fill="x", pady=(0, 6))
         ttk.Entry(source, textvariable=self.folder_var).grid(row=0, column=0, sticky="ew")
         ttk.Button(source, text="Browse Folder", command=self.browse_folder).grid(row=0, column=1, padx=(8, 0))
         ttk.Checkbutton(source, text="Recursive", variable=self.recursive_var, command=self.validate_folder).grid(
@@ -234,8 +239,8 @@ class BaseSpaceUploader(tk.Tk):
 
         source.columnconfigure(0, weight=1)
 
-        upload = ttk.LabelFrame(right_column, text="4. Upload", padding=10, style="Section.TLabelframe")
-        upload.pack(fill="x", pady=(0, 10))
+        upload = ttk.LabelFrame(right_column, text="4. Upload", padding=8, style="Section.TLabelframe")
+        upload.pack(fill="x", pady=(0, 6))
         self.progress = ttk.Progressbar(upload, variable=self.progress_var, maximum=100)
         self.progress.grid(row=0, column=0, columnspan=4, sticky="ew")
         ttk.Label(upload, textvariable=self.progress_text_var, font=("Segoe UI", 10, "bold")).grid(
@@ -259,17 +264,18 @@ class BaseSpaceUploader(tk.Tk):
         for column in range(4):
             upload.columnconfigure(column, weight=1)
 
-        logs = ttk.LabelFrame(outer, text="Activity log", padding=8, style="Section.TLabelframe")
-        logs.pack(fill="both", expand=True)
-        log_toolbar = ttk.Frame(logs)
+        self.logs_frame = ttk.LabelFrame(outer, text="Activity log", padding=8, style="Section.TLabelframe")
+        self.logs_frame.pack(fill="x", pady=(0, 2))
+        log_toolbar = ttk.Frame(self.logs_frame)
         log_toolbar.pack(fill="x", pady=(0, 6))
-        ttk.Button(log_toolbar, text="Open validation report", command=self.open_validation_report).pack(side="left")
+        self.log_toggle_btn = ttk.Button(log_toolbar, text="Show log", command=self.toggle_activity_log)
+        self.log_toggle_btn.pack(side="left")
+        ttk.Button(log_toolbar, text="Open validation report", command=self.open_validation_report).pack(side="left", padx=(6, 0))
         ttk.Button(log_toolbar, text="Save log", command=self.save_activity_log).pack(side="right")
         ttk.Button(log_toolbar, text="Clear", command=self.clear_activity_log).pack(side="right", padx=(0, 6))
-        log_body = ttk.Frame(logs)
-        log_body.pack(fill="both", expand=True)
-        self.log = tk.Text(log_body, height=7, wrap="word", font=("Consolas", 9), relief="flat")
-        scroll = ttk.Scrollbar(log_body, orient="vertical", command=self.log.yview)
+        self.log_body = ttk.Frame(self.logs_frame)
+        self.log = tk.Text(self.log_body, height=7, wrap="word", font=("Consolas", 9), relief="flat")
+        scroll = ttk.Scrollbar(self.log_body, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
@@ -340,6 +346,16 @@ class BaseSpaceUploader(tk.Tk):
 
     def clear_activity_log(self):
         self.log.delete("1.0", "end")
+
+    def toggle_activity_log(self):
+        if self.log_body.winfo_manager():
+            self.log_body.pack_forget()
+            self.logs_frame.pack_configure(fill="x", expand=False)
+            self.log_toggle_btn.configure(text="Show log")
+        else:
+            self.log_body.pack(fill="both", expand=True)
+            self.logs_frame.pack_configure(fill="both", expand=True)
+            self.log_toggle_btn.configure(text="Hide log")
 
     def save_activity_log(self):
         path = filedialog.asksaveasfilename(
@@ -1001,5 +1017,7 @@ class BaseSpaceUploader(tk.Tk):
 
 
 if __name__ == "__main__":
-    app = BaseSpaceUploader()
-    app.mainloop()
+    root = tk.Tk()
+    app = BaseSpaceUploader(root)
+    app.pack(fill="both", expand=True)
+    root.mainloop()

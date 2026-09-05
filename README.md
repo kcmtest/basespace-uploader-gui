@@ -1,14 +1,17 @@
-# BaseSpace FASTQ Uploader
+# BaseSpace Transfer Manager
 
-A small Windows GUI around Illumina's BaseSpace CLI (`bs.exe`) intended for users who do not want to work from the command line.
+A Windows GUI for uploading and downloading sequencing files with Illumina's
+BaseSpace CLI (`bs.exe`).
 
 ## Features
 
 - Authenticate with BaseSpace and select a project
+- Keep the BaseSpace path, login, and project synchronized across both tabs
 - Validate FASTQ filenames and R1/R2 pairs
 - Ignore invalid filenames and save a validation report
 - Upload FASTQs recursively with progress and network speed
-- View upload logs or cancel an active upload
+- Browse and download selected project files
+- View transfer logs or cancel an active transfer
 
 ## Repository contents
 
@@ -17,6 +20,8 @@ The GitHub repository contains only the files needed to run or build the GUI:
     BaseSpace_FASTQ_Uploader/
       .gitignore
       README.md
+      basespace_gui.py
+      basespace_downloader.py
       basespace_uploader.py
       requirements.txt
 
@@ -34,11 +39,15 @@ Install Python 3.10+ on Windows.
 Open PowerShell or Command Prompt in this folder:
 
     pip install -r requirements.txt
-    python basespace_uploader.py
+    python basespace_gui.py
+
+Use the **Upload FASTQs** and **Download Files** tabs to switch between the two
+workflows. The uploader and downloader can also be launched independently with
+`python basespace_uploader.py` or `python basespace_downloader.py`.
 
 The application will automatically look for `bs.exe` in the same folder. You can also browse to another copy of `bs.exe`.
 
-## Normal workflow
+## Upload workflow
 
 1. Click **Authenticate**.
 2. Your browser should open the BaseSpace authentication page.
@@ -51,6 +60,13 @@ The application will automatically look for `bs.exe` in the same folder. You can
 9. Click **START UPLOAD**.
 10. Confirm the project, folder, number of FASTQs and total size.
 11. Monitor upload progress and network throughput.
+
+## Download workflow
+
+1. Open the **Download Files** tab and check the BaseSpace login.
+2. Select a source project and output folder.
+3. Enter an extension or `*`, then fetch the file list.
+4. Select one or more files and click **START DOWNLOAD**.
 
 ## BaseSpace commands used by the GUI
 
