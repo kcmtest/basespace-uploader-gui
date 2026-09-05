@@ -470,7 +470,6 @@ class BaseSpaceUploader(tk.Tk):
             return
 
         name = ""
-        email = ""
         for line in output.splitlines():
             cols = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cols) >= 2:
@@ -478,10 +477,9 @@ class BaseSpaceUploader(tk.Tk):
                 val = cols[1]
                 if key == "name":
                     name = val
-                elif key == "email":
-                    email = val
 
-        display = email or name or "Authenticated BaseSpace user"
+        # Do not expose the account email address in the GUI.
+        display = name or "Authenticated BaseSpace user"
         self.user_var.set(display)
         self.authenticated = True
         self.auth_status_var.set("Authenticated")
