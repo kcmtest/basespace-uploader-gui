@@ -21,6 +21,8 @@ bs.exe
 # Generated reports and logs
 invalid_fastq_filenames.txt
 activity_log*.txt
+failed_logs.txt
+failed_downloads.tsv
 
 # Local development files
 basespace_uploader_v1.py

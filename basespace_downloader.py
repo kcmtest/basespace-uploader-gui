@@ -15,6 +15,7 @@ from tkinter import ttk, filedialog, messagebox
 
 APP_TITLE = "BaseSpace File Downloader"
 
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 SIZE_TOKEN_RE = re.compile(r"^\d+(\.\d+)?\s*[KMGT]?i?B$", re.IGNORECASE)
 
 
@@ -59,6 +60,12 @@ def parse_extensions(raw):
     if not raw or raw.lower() in ("all files", "*"):
         return []
     return [p.strip().lstrip(".") for p in raw.split(",") if p.strip()]
+
+
+def matches_extension(path, extensions):
+    """Match complete filename extensions instead of arbitrary suffix text."""
+    lowered_path = path.lower()
+    return any(lowered_path.endswith("." + ext.lower().lstrip(".")) for ext in extensions)
 
 
 @dataclass
@@ -349,6 +356,7 @@ class BaseSpaceDownloader(ttk.Frame):
             self.log_toggle_btn.configure(text="Hide log")
 
     def _append_log(self, text):
+        text = ANSI_ESCAPE_RE.sub("", text)
         self.log.insert("end", text)
         self.log.see("end")
 
@@ -396,12 +404,16 @@ class BaseSpaceDownloader(ttk.Frame):
     # Process running (auth / list / contents) — captures full output
     # ------------------------------------------------------------------ #
 
-    def run_capture(self, args, callback=None, purpose="command", open_auth_url=False):
+    def run_capture(
+        self, args, callback=None, purpose="command", open_auth_url=False,
+        log_output=True, log_command=True,
+    ):
         def worker():
             try:
                 exe = self.bs_executable()
                 cmd = [exe] + args
-                self.events.put(("log", "\n> " + subprocess.list2cmdline(cmd) + "\n"))
+                if log_command:
+                    self.events.put(("log", "\n> " + subprocess.list2cmdline(cmd) + "\n"))
                 proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, encoding="utf-8", errors="replace", bufsize=1,
@@ -411,7 +423,8 @@ class BaseSpaceDownloader(ttk.Frame):
                 opened = False
                 for line in proc.stdout:
                     output.append(line)
-                    self.events.put(("log", line))
+                    if log_output:
+                        self.events.put(("log", line))
                     if open_auth_url and not opened:
                         m = re.search(r"https?://[^\s]+", line)
                         if m:
@@ -448,10 +461,14 @@ class BaseSpaceDownloader(ttk.Frame):
 
     def check_login(self):
         self.auth_status_var.set("Checking…")
-        self.run_capture(["whoami"], callback=self._whoami_finished, purpose="whoami")
+        self.run_capture(
+            ["whoami"], callback=self._whoami_finished, purpose="whoami",
+            log_output=False, log_command=False,
+        )
 
     def _whoami_finished(self, code, output):
         if code != 0:
+            self._append_log("BaseSpace login check failed.\n")
             self.authenticated = False
             self.auth_status_var.set("Not authenticated")
             self.user_var.set("—")
@@ -462,7 +479,9 @@ class BaseSpaceDownloader(ttk.Frame):
             cols = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cols) >= 2 and cols[0].lower() == "name":
                 name = cols[1]
-        self.user_var.set(name or "Authenticated BaseSpace user")
+        display = name or "Authenticated BaseSpace user"
+        self.user_var.set(display)
+        self._append_log(f"BaseSpace login verified for {display}.\n")
         self.authenticated = True
         self.auth_status_var.set("Authenticated")
         self.status_var.set("Authenticated — pick a project")
@@ -473,13 +492,18 @@ class BaseSpaceDownloader(ttk.Frame):
 
     def load_projects(self):
         self.status_var.set("Loading projects…")
-        self.run_capture(["list", "projects"], callback=self._projects_finished, purpose="list projects")
+        self.run_capture(
+            ["list", "projects"], callback=self._projects_finished, purpose="list projects",
+            log_output=False, log_command=False,
+        )
 
     def _projects_finished(self, code, output):
         if code != 0:
+            self._append_log("Could not load the BaseSpace project list.\n")
             self.status_var.set("Could not load projects")
             return
         projects = self.parse_pipe_table(output, id_col=1, name_col=0)
+        self._append_log(f"Loaded {len(projects)} BaseSpace project(s).\n")
         self.projects = {f"{name}  |  {pid}": Project(name, pid) for pid, name in projects}
         labels = list(self.projects.keys())
         self.project_combo["values"] = labels
@@ -584,8 +608,7 @@ class BaseSpaceDownloader(ttk.Frame):
                 # comma-separated list (or an extension the CLI's own
                 # --extension flag didn't recognize) still narrows results.
                 if exts:
-                    lowered_exts = [e.lower() for e in exts]
-                    files = [f for f in files if any(f.path.lower().endswith(e) for e in lowered_exts)]
+                    files = [f for f in files if matches_extension(f.path, exts)]
 
                 self.events.put(("fetch_done", files, None))
             except Exception as exc:
@@ -767,7 +790,10 @@ class BaseSpaceDownloader(ttk.Frame):
                     break
 
                 self.events.put(("download_progress", idx, len(selected), f.name))
-                cmd = [exe, "download", "file", "-i", f.file_id, "-o", str(outdir)]
+                cmd = [
+                    exe, "download", "file", "--no-metadata",
+                    "-i", f.file_id, "-o", str(outdir),
+                ]
                 self.events.put(("log", "\n> " + subprocess.list2cmdline(cmd) + "\n"))
                 try:
                     proc = subprocess.Popen(

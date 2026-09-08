@@ -27,6 +27,7 @@ FASTQ_RE = re.compile(
 FASTQ_SUFFIXES = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
 
 URL_RE = re.compile(r"https?://[^\s]+")
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 FILE_PROGRESS_RE = re.compile(
     r"Uploaded\s+(?P<done>\d+)\s*/\s*(?P<total>\d+)\s+files\s+"
     r"\((?P<pct>[\d.]+)\s*%\)",
@@ -422,15 +423,20 @@ class BaseSpaceUploader(ttk.Frame):
         self.events.put(("log", text))
 
     def _append_log(self, text):
+        text = ANSI_ESCAPE_RE.sub("", text)
         self.log.insert("end", text)
         self.log.see("end")
 
-    def run_capture(self, args, callback=None, purpose="command", open_auth_url=False):
+    def run_capture(
+        self, args, callback=None, purpose="command", open_auth_url=False,
+        log_output=True, log_command=True,
+    ):
         def worker():
             try:
                 exe = self.bs_executable()
                 cmd = [exe] + args
-                self.events.put(("log", "\n> " + subprocess.list2cmdline(cmd) + "\n"))
+                if log_command:
+                    self.events.put(("log", "\n> " + subprocess.list2cmdline(cmd) + "\n"))
                 proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
@@ -446,7 +452,8 @@ class BaseSpaceUploader(ttk.Frame):
 
                 for line in proc.stdout:
                     output.append(line)
-                    self.events.put(("log", line))
+                    if log_output:
+                        self.events.put(("log", line))
                     if open_auth_url and not opened:
                         m = URL_RE.search(line)
                         if m:
@@ -483,10 +490,14 @@ class BaseSpaceUploader(ttk.Frame):
 
     def check_login(self):
         self.auth_status_var.set("Checking…")
-        self.run_capture(["whoami"], callback=self._whoami_finished, purpose="whoami")
+        self.run_capture(
+            ["whoami"], callback=self._whoami_finished, purpose="whoami",
+            log_output=False, log_command=False,
+        )
 
     def _whoami_finished(self, code, output):
         if code != 0:
+            self._append_log("BaseSpace login check failed.\n")
             self.authenticated = False
             self.auth_status_var.set("Not authenticated")
             self.user_var.set("—")
@@ -505,6 +516,7 @@ class BaseSpaceUploader(ttk.Frame):
         # Do not expose the account email address in the GUI.
         display = name or "Authenticated BaseSpace user"
         self.user_var.set(display)
+        self._append_log(f"BaseSpace login verified for {display}.\n")
         self.authenticated = True
         self.auth_status_var.set("Authenticated")
         self.status_var.set("Authenticated")
@@ -512,14 +524,19 @@ class BaseSpaceUploader(ttk.Frame):
 
     def load_projects(self):
         self.status_var.set("Loading projects…")
-        self.run_capture(["list", "projects"], callback=self._projects_finished, purpose="list projects")
+        self.run_capture(
+            ["list", "projects"], callback=self._projects_finished, purpose="list projects",
+            log_output=False, log_command=False,
+        )
 
     def _projects_finished(self, code, output):
         if code != 0:
+            self._append_log("Could not load the BaseSpace project list.\n")
             self.status_var.set("Could not load projects")
             return
 
         projects = self.parse_projects(output)
+        self._append_log(f"Loaded {len(projects)} BaseSpace project(s).\n")
         self.projects = {p.label(): p for p in projects}
         labels = [p.label() for p in projects]
         self.project_combo["values"] = labels
