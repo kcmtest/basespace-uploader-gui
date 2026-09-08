@@ -27,12 +27,12 @@ FASTQ_RE = re.compile(
 FASTQ_SUFFIXES = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
 
 URL_RE = re.compile(r"https?://[^\s]+")
-PERCENT_RE = re.compile(r"(?P<pct>\d+(?:\.\d+)?)%")
 FILE_PROGRESS_RE = re.compile(
     r"Uploaded\s+(?P<done>\d+)\s*/\s*(?P<total>\d+)\s+files\s+"
     r"\((?P<pct>[\d.]+)\s*%\)",
     re.IGNORECASE,
 )
+CREATE_SAMPLE_RE = re.compile(r"Creating\s+sample:\s*(?P<sample>.+?)\s*$", re.IGNORECASE)
 
 # Matches e.g.:
 # 877.18 MiB / 933.00 MiB
@@ -102,6 +102,14 @@ class BaseSpaceUploader(ttk.Frame):
         self.network_job = None
         self.authenticated = False
         self.last_validation = None
+        self.upload_total_files = 0
+        self.upload_total_bytes = 0
+        self.upload_completed_files = 0
+        self.upload_completed_bytes = 0
+        self.upload_current_sample = None
+        self.upload_current_group_done = 0
+        self.upload_sample_file_sizes = {}
+        self.upload_completed_samples = set()
 
         self.bs_path_var = tk.StringVar(value=self.default_bs_path())
         self.auth_status_var = tk.StringVar(value="Not checked")
@@ -676,6 +684,7 @@ class BaseSpaceUploader(ttk.Frame):
 
         pairs = {}
         samples = set()
+        sample_files = {}
         invalid = []
 
         for p in files:
@@ -686,6 +695,7 @@ class BaseSpaceUploader(ttk.Frame):
 
             g = m.groupdict()
             samples.add(g["sample"])
+            sample_files.setdefault(g["sample"], []).append(p)
             key = (str(p.parent), g["sample"], g["sample_no"], g["lane"], g["set"])
             pairs.setdefault(key, set()).add(g["read"])
 
@@ -757,6 +767,10 @@ class BaseSpaceUploader(ttk.Frame):
             "missing_r2": missing_r2,
             "total_size": total_size,
             "valid_total_size": valid_total_size,
+            "sample_file_sizes": {
+                sample: [p.stat().st_size for p in sorted(paths)]
+                for sample, paths in sample_files.items()
+            },
         }
         self.last_validation = result
         if not files:
@@ -833,6 +847,14 @@ class BaseSpaceUploader(ttk.Frame):
         self.progress_var.set(0)
         self.progress_text_var.set("0%")
         self.file_progress_var.set(f"0 of {validation['valid_fastq_count']} files")
+        self.upload_total_files = validation["valid_fastq_count"]
+        self.upload_total_bytes = validation["valid_total_size"]
+        self.upload_completed_files = 0
+        self.upload_completed_bytes = 0
+        self.upload_current_sample = None
+        self.upload_current_group_done = 0
+        self.upload_sample_file_sizes = validation["sample_file_sizes"]
+        self.upload_completed_samples = set()
         self.live_speed_var.set("0.00 MiB/s")
         self.start_btn.config(state="disabled", text="UPLOADING…")
         self.cancel_btn.config(state="normal")
@@ -891,28 +913,84 @@ class BaseSpaceUploader(ttk.Frame):
 
         self._append_log(line + "\n")
 
+        sample_match = CREATE_SAMPLE_RE.search(line)
+        if sample_match:
+            self._complete_current_sample()
+            self.upload_current_sample = sample_match.group("sample").strip()
+            self.upload_current_group_done = 0
+
         fm = FILE_PROGRESS_RE.search(line)
         if fm:
-            pct = float(fm.group("pct"))
-            self.progress_var.set(max(0, min(100, pct)))
-            self.progress_text_var.set(f"{pct:.0f}%")
-            self.file_progress_var.set(f"{fm.group('done')} of {fm.group('total')} files uploaded")
+            done = int(fm.group("done"))
+            self.upload_current_group_done = done
+            sizes = self._current_sample_sizes()
+            if sizes:
+                current_bytes = sum(sizes[:min(done, len(sizes))])
+                self._set_overall_upload_progress(
+                    self.upload_completed_bytes + current_bytes,
+                    self.upload_completed_files + min(done, len(sizes)),
+                )
+                if done >= len(sizes):
+                    self._complete_current_sample()
+            else:
+                # Fallback when the CLI sample name cannot be matched to the
+                # validated filenames. Keep the overall denominator correct.
+                completed = min(self.upload_total_files, self.upload_completed_files + done)
+                self._set_overall_upload_progress(None, completed)
 
-        m = PERCENT_RE.search(line)
-        if m:
-            pct = float(m.group("pct"))
-            self.progress_var.set(max(0, min(100, pct)))
-            self.progress_text_var.set(f"{pct:.0f}%")
-
-        # If CLI formatting changes, infer percent from "done / total".
+        # BaseSpace also emits byte progress for the current file. Weight that
+        # value by the validated sizes of every FASTQ in the upload.
         sm = SIZE_PROGRESS_RE.search(line)
-        if sm and not m:
+        if sm:
             done = bytes_from_unit(sm.group("done"), sm.group("done_unit"))
             total = bytes_from_unit(sm.group("total"), sm.group("total_unit"))
-            if total > 0:
-                pct = max(0, min(100, 100.0 * done / total))
-                self.progress_var.set(pct)
-                self.progress_text_var.set(f"{pct:.0f}%")
+            sizes = self._current_sample_sizes()
+            index = self.upload_current_group_done
+            if total > 0 and sizes and index < len(sizes):
+                prior_bytes = sum(sizes[:index])
+                current_bytes = sizes[index] * min(1.0, max(0.0, done / total))
+                self._set_overall_upload_progress(
+                    self.upload_completed_bytes + prior_bytes + current_bytes,
+                    self.upload_completed_files + index,
+                )
+
+    def _current_sample_sizes(self):
+        if not self.upload_current_sample:
+            return []
+        return self.upload_sample_file_sizes.get(self.upload_current_sample, [])
+
+    def _complete_current_sample(self):
+        sample = self.upload_current_sample
+        if not sample or sample in self.upload_completed_samples:
+            return
+        sizes = self.upload_sample_file_sizes.get(sample, [])
+        if sizes:
+            self.upload_completed_samples.add(sample)
+            self.upload_completed_bytes += sum(sizes)
+            self.upload_completed_files += len(sizes)
+            self._set_overall_upload_progress(
+                self.upload_completed_bytes,
+                self.upload_completed_files,
+            )
+        self.upload_current_sample = None
+        self.upload_current_group_done = 0
+
+    def _set_overall_upload_progress(self, bytes_done, files_done):
+        files_done = max(0, min(self.upload_total_files, files_done))
+        if bytes_done is not None and self.upload_total_bytes > 0:
+            pct = 100.0 * bytes_done / self.upload_total_bytes
+        elif self.upload_total_files > 0:
+            pct = 100.0 * files_done / self.upload_total_files
+        else:
+            pct = 0.0
+        # Reserve 100% for a successful process exit.
+        pct = max(float(self.progress_var.get()), max(0.0, min(99.9, pct)))
+        self.progress_var.set(pct)
+        self.progress_text_var.set(f"{pct:.1f}%")
+        self.file_progress_var.set(
+            f"{files_done} of {self.upload_total_files} files uploaded | "
+            f"{human_size(bytes_done or 0)} of {human_size(self.upload_total_bytes)}"
+        )
 
     def _schedule_network_update(self):
         if self.current_process is None and self.status_var.get() != "Uploading":
@@ -970,7 +1048,10 @@ class BaseSpaceUploader(ttk.Frame):
         if code == 0:
             self.progress_var.set(100)
             self.progress_text_var.set("100%")
-            self.file_progress_var.set("All files uploaded")
+            self.file_progress_var.set(
+                f"{self.upload_total_files} of {self.upload_total_files} files uploaded | "
+                f"{human_size(self.upload_total_bytes)} of {human_size(self.upload_total_bytes)}"
+            )
             self.status_var.set("Upload completed")
             self._append_log("\n=== Upload completed successfully ===\n")
             messagebox.showinfo(APP_TITLE, "BaseSpace upload completed successfully.")
