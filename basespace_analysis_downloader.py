@@ -72,12 +72,14 @@ class RemoteFile:
 
 
 class AnalysisFolderDownloader(ttk.Frame):
-    def __init__(self, master=None):
+    def __init__(self, master=None, show_header=True, configure_window=True):
         super().__init__(master)
-        window = self.winfo_toplevel()
-        window.title(APP_TITLE)
-        window.geometry("1120x760")
-        window.minsize(920, 650)
+        self.show_header = show_header
+        if configure_window:
+            window = self.winfo_toplevel()
+            window.title(APP_TITLE)
+            window.geometry("1120x760")
+            window.minsize(920, 650)
 
         self.events = queue.Queue()
         self.current_process = None
@@ -129,12 +131,13 @@ class AnalysisFolderDownloader(ttk.Frame):
 
         outer = ttk.Frame(self, padding=12)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text=APP_TITLE, style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            outer,
-            text="Choose project  →  choose analysis  →  choose dataset  →  select folders/files  →  download",
-            style="Muted.TLabel",
-        ).pack(anchor="w", pady=(2, 10))
+        if self.show_header:
+            ttk.Label(outer, text=APP_TITLE, style="Title.TLabel").pack(anchor="w")
+            ttk.Label(
+                outer,
+                text="Choose project  →  choose analysis  →  choose dataset  →  select folders/files  →  download",
+                style="Muted.TLabel",
+            ).pack(anchor="w", pady=(2, 10))
 
         self.banner = tk.Label(
             outer, textvariable=self.status_var, anchor="w", padx=14, pady=9,
@@ -244,6 +247,8 @@ class AnalysisFolderDownloader(ttk.Frame):
         match = re.search(rf"/{entity}/(\d+)(?:/|$)", raw)
         if not match:
             match = re.fullmatch(r"(\d+)", raw)
+        if not match:
+            match = re.search(r"\|\s*(\d+)\s*$", raw)
         return match.group(1) if match else ""
 
     def selected_project_id(self):

@@ -17,6 +17,8 @@ bs.exe
 *.fastq.gz
 *.fq
 *.fq.gz
+BaseSpace_Project_*_FASTQ/
+BaseSpace_Analysis_*/
 
 # Generated reports and logs
 invalid_fastq_filenames.txt
