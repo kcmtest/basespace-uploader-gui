@@ -302,7 +302,8 @@ class BaseSpaceDownloader(ttk.Frame):
 
         # -- Log -----------------------------------------------------------
         self.logs_frame = ttk.LabelFrame(outer, text="Activity log", padding=8, style="Section.TLabelframe")
-        self.logs_frame.pack(fill="x", pady=(0, 4), before=files_frame)
+        # Reserve space at the bottom for the log; downloads stay above it.
+        self.logs_frame.pack(side="bottom", fill="x", pady=(0, 4), before=files_frame)
         log_toolbar = ttk.Frame(self.logs_frame)
         log_toolbar.pack(fill="x", pady=(0, 6))
         self.log_toggle_btn = ttk.Button(log_toolbar, text="Show log", command=self.toggle_activity_log)
